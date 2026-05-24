@@ -77,7 +77,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:Geist,s
 .tb-dot{width:5px;height:5px;border-radius:50%;background:#4ade80;animation:pulse 2s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}
 
-.main{display:flex;flex:1;overflow:hidden}
+.main{display:flex!important;flex:1;overflow:hidden;min-height:0}
 
 /* ── Sidebar ── */
 .sidebar{
@@ -298,7 +298,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:Geist,s
 .tb-tab{background:none;border:none;color:var(--text4);font-family:Geist,sans-serif;font-size:9px;letter-spacing:.12em;text-transform:uppercase;cursor:pointer;padding:4px 8px;border-radius:2px;transition:all .2s;}
 .tb-tab:hover{color:var(--text3);}
 .tb-tab.active{color:var(--purple);background:rgba(167,139,250,.08);}
-#alerts-panel,#audit-panel{display:none;flex:1;overflow-y:auto;padding:20px 24px;}
+#alerts-panel,#audit-panel{display:none;flex:1;overflow-y:auto;padding:20px 24px;flex-direction:column;}
 .alert-item{padding:12px 14px;border:1px solid rgba(255,255,255,.06);border-radius:3px;margin-bottom:8px;background:rgba(255,255,255,.01);}
 .alert-item.high{border-color:rgba(255,107,107,.2);}
 .alert-item.unread{border-left:2px solid #f472b6;}
@@ -389,11 +389,15 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:Geist,s
       </div>
 
       <!-- Conversation viewer -->
-      <div class="conv-viewer" id="conv-viewer">
-        <div class="empty">
-          <span class="empty-star">✦</span>
-          <span class="empty-text">Select a conversation</span>
+      <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+        <div class="conv-viewer" id="conv-viewer" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
+          <div class="empty">
+            <span class="empty-star">✦</span>
+            <span class="empty-text">Select a conversation</span>
+          </div>
         </div>
+        <!-- Persistent support send panel slot — never wiped by conv render -->
+        <div id="support-panel-slot"></div>
       </div>
 
     </div>
@@ -796,9 +800,11 @@ var _lumeResponsesDisabled = false;
 
 function reopenSupportTools(){
   if(!_agentConnected) return;
+  // If panel already exists in slot, just scroll to it
+  var existing = document.getElementById('support-send-panel');
+  if(existing){ existing.scrollIntoView({ behavior:'smooth', block:'nearest' }); return; }
   var agentName = (document.getElementById('agent-name-input') || {}).value || 'Support';
   showSupportSendPanel(agentName);
-  // Reload canned responses
   if(typeof loadCannedResponses === 'function') loadCannedResponses();
   showToast('Support tools restored');
 }
@@ -1006,9 +1012,12 @@ function forceReload(){
 function switchTab(tab){
   document.querySelectorAll('.tb-tab').forEach(function(t){ t.classList.remove('active'); });
   document.getElementById('tab-' + tab).classList.add('active');
-  document.querySelector('.main').style.display      = tab === 'accounts' ? 'flex'  : 'none';
-  document.getElementById('alerts-panel').style.display = tab === 'alerts'   ? 'block' : 'none';
-  document.getElementById('audit-panel').style.display  = tab === 'audit'    ? 'block' : 'none';
+  // Use visibility instead of display:none so flex layout is preserved
+  document.querySelector('.main').style.visibility     = tab === 'accounts' ? '' : 'hidden';
+  document.querySelector('.main').style.position       = tab === 'accounts' ? '' : 'absolute';
+  document.querySelector('.main').style.pointerEvents  = tab === 'accounts' ? '' : 'none';
+  document.getElementById('alerts-panel').style.display = tab === 'alerts'   ? 'flex' : 'none';
+  document.getElementById('audit-panel').style.display  = tab === 'audit'    ? 'flex' : 'none';
   if(tab === 'alerts') loadAlerts();
   if(tab === 'audit')  loadAudit();
 }
@@ -1286,10 +1295,11 @@ function showSupportSendPanel(agentName){
       '</div>' +
     '</div>';
 
-  // Insert before the conv-viewer's note area or append
-  var notesArea = cv.querySelector('.cv-add-note');
-  if(notesArea) cv.insertBefore(panel, notesArea);
-  else          cv.appendChild(panel);
+  // Always use the persistent slot so conv-viewer re-renders don't wipe it
+  var slot = document.getElementById('support-panel-slot');
+  if(slot) slot.appendChild(panel);
+  else     (document.getElementById('conv-viewer') || document.body).appendChild(panel);
+  loadCannedResponses();
 }
 
 function sendSupportMessage(){
@@ -1512,8 +1522,9 @@ function renderAccountPanel(a){
     var disconnectBtn = document.getElementById('support-disconnect-btn');
     if(connectBtn)    connectBtn.style.display    = 'none';
     if(disconnectBtn) disconnectBtn.style.display = '';
-    // Re-show send panel if it was wiped by the render
-    if(!document.getElementById('support-send-panel')){
+    // Re-show send panel in slot if missing
+    var slot = document.getElementById('support-panel-slot');
+    if(slot && !document.getElementById('support-send-panel')){
       var agentName = (document.getElementById('agent-name-input') || {}).value || 'Support';
       showSupportSendPanel(agentName);
     }
@@ -1648,7 +1659,7 @@ function renderConvViewer(conv){
       '<div class="cv-header">' +
         '<div class="cv-title">' + esc(conv.label || 'Untitled') + ' ' + headerTags + '</div>' +
         '<div class="cv-actions">' +
-        (_agentConnected && !document.getElementById('support-send-panel')
+        (_agentConnected
           ? '<button class="cv-btn" style="color:#4ade80;border-color:rgba(74,222,128,.2)" onclick="reopenSupportTools()">&#9654; Support tools</button>'
           : '') +
         '<button class="cv-btn flag-btn" onclick="toggleFlag()">' + (conv.flagged ? 'Unflag' : 'Flag') + '</button>' +
