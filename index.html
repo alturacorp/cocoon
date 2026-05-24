@@ -314,6 +314,12 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:Geist,s
 .acct-note-item{padding:8px 10px;border-left:2px solid rgba(167,139,250,.2);margin-bottom:8px;}
 .acct-note-text{font-family:Lora,serif;font-style:italic;font-size:12px;color:var(--text3);line-height:1.7;}
 .acct-note-ts{font-family:Geist Mono,monospace;font-size:9px;color:var(--text4);margin-top:3px;}
+
+.accent-swatch{width:18px;height:18px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:border-color .15s;flex-shrink:0;}
+.accent-swatch.selected{border-color:#fff;}
+#card-composer{border-top:1px solid rgba(74,222,128,.07);padding:14px 0 0;margin-top:10px;}
+#card-composer textarea,#card-composer input{width:100%;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:3px;padding:8px 10px;color:var(--text2);font-family:Geist,sans-serif;font-size:11px;outline:none;margin-bottom:6px;line-height:1.5;}
+#card-composer textarea{font-family:Lora,serif;font-style:italic;font-size:12px;resize:none;height:60px;line-height:1.6;}
 </style>
 </head>
 <body>
@@ -493,6 +499,99 @@ let allAccounts = [];
 
 
 
+
+
+// ── Card composer ─────────────────────────────────────────────
+var _selectedAccent = 'purple';
+
+var CARD_PRESETS = [
+  { label: 'Acknowledged',      title: 'Request received.',   body: "Your request has been received. A support agent will join when available. You will see a card here when they connect.",                                                        accent: 'green',   dismissable: false, cardLabel: 'Support queue'     },
+  { label: 'Be respectful',     title: null,                  body: "A quick note before we continue — Lume works best as a space for honest, constructive conversation. Keep that in mind and we can carry on.",                               accent: 'amber',   dismissable: true,  cardLabel: 'Reminder'          },
+  { label: 'Pause and reflect', title: null,                  body: "Take a moment before we continue. Whatever you are working through, there is no rush here.",                                                                                    accent: 'neutral', dismissable: true,  cardLabel: 'From support'      },
+  { label: 'Looking into it',   title: 'Bear with us.',       body: "I am looking at this now. It may take a few minutes — I will come back to you as soon as I have something useful to say.",                                                accent: 'purple',  dismissable: true,  cardLabel: 'From support'      },
+  { label: 'Escalating',        title: null,                  body: "This is one I need to pass to someone with more access. I have flagged it and you should hear back within a working day.",                                                      accent: 'amber',   dismissable: false, cardLabel: 'Notice'            },
+  { label: 'Session handoff',   title: 'Passing you over.',   body: "I am handing this conversation to a colleague who is better placed to help. They have the full context and will be with you shortly.",                                         accent: 'purple',  dismissable: false, cardLabel: 'From support'      },
+  { label: 'Service update',    title: null,                  body: "We have made some changes to how Lume works that may affect what you are seeing. Nothing you need to do — just worth knowing.",                                           accent: 'neutral', dismissable: true,  cardLabel: 'Service notice'    },
+  { label: 'Follow-up',         title: null,                  body: "Checking in — is everything working as expected now? If anything else comes up, you know how to reach us.",                                                               accent: 'green',   dismissable: true,  cardLabel: 'From support'      },
+  { label: 'Cooling period',    title: 'Session paused.',     body: "This session is paused for a short period. You will be able to continue shortly. If you believe this is in error, you can request a review.",                                  accent: 'red',     dismissable: false, cardLabel: 'Notice'            },
+  { label: 'Resolved',          title: 'All sorted.',         body: "Glad we got that sorted. If anything else comes up you can request support the same way and someone will pick it up. Take care.",                                              accent: 'green',   dismissable: true,  cardLabel: 'From support'      },
+];
+
+function toggleCardComposer(){
+  var fields = document.getElementById('card-composer-fields');
+  var btn    = document.getElementById('card-composer-toggle');
+  if(!fields) return;
+  var open = fields.style.display === 'none';
+  fields.style.display = open ? 'block' : 'none';
+  if(btn) btn.textContent = open ? 'Hide' : 'Show';
+  if(open) renderCardPresets();
+}
+
+function renderCardPresets(){
+  var el = document.getElementById('card-presets');
+  if(!el || el.children.length > 0) return; // already rendered
+  CARD_PRESETS.forEach(function(p, i){
+    var btn = document.createElement('button');
+    btn.textContent = p.label;
+    btn.style.cssText = 'padding:4px 8px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);border-radius:2px;color:var(--text3);font-family:Geist,sans-serif;font-size:8.5px;letter-spacing:.06em;cursor:pointer;transition:all .2s;white-space:nowrap';
+    btn.onclick = function(){ applyCardPreset(i); };
+    el.appendChild(btn);
+  });
+}
+
+function applyCardPreset(idx){
+  var p = CARD_PRESETS[idx];
+  if(!p) return;
+  var labelEl = document.getElementById('card-label');
+  var titleEl = document.getElementById('card-title');
+  var bodyEl  = document.getElementById('card-body');
+  var dimEl   = document.getElementById('card-dismissable');
+  if(labelEl) labelEl.value = p.cardLabel || '';
+  if(titleEl) titleEl.value = p.title || '';
+  if(bodyEl)  bodyEl.value  = p.body  || '';
+  if(dimEl)   dimEl.checked = p.dismissable !== false;
+  selectAccentByName(p.accent || 'purple');
+}
+
+function selectAccent(el){
+  document.querySelectorAll('.accent-swatch').forEach(function(s){ s.classList.remove('selected'); });
+  el.classList.add('selected');
+  _selectedAccent = el.dataset.accent;
+}
+
+function selectAccentByName(name){
+  document.querySelectorAll('.accent-swatch').forEach(function(s){
+    s.classList.toggle('selected', s.dataset.accent === name);
+  });
+  _selectedAccent = name;
+}
+
+function sendAdminCard(){
+  if(!currentAccount) return;
+  var body = (document.getElementById('card-body') || {}).value;
+  if(!body || !body.trim()){ showToast('Card body required'); return; }
+  var agentName = (document.getElementById('agent-name-input') || {}).value || 'Support';
+  var payload = {
+    account:     currentAccount,
+    title:       ((document.getElementById('card-title') || {}).value || '').trim() || null,
+    text:        body.trim(),
+    label:       ((document.getElementById('card-label') || {}).value || '').trim() || 'From support',
+    accent:      _selectedAccent || 'purple',
+    dismissable: !!(document.getElementById('card-dismissable') || {}).checked,
+    footer:      ((document.getElementById('card-footer') || {}).value || '').trim() || agentName,
+    agentName:   agentName,
+  };
+  fetch(WORKER + '/admin/card', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Key': ADMIN_KEY },
+    body: JSON.stringify(payload),
+  }).then(function(r){ return r.json(); }).then(function(){
+    showToast('Card sent · delivered within 30s');
+    // Clear body only, keep other fields for quick follow-up
+    var bodyEl = document.getElementById('card-body');
+    if(bodyEl) bodyEl.value = '';
+  });
+}
 
 // ── Maintenance mode ──────────────────────────────────────────
 var _maintenanceActive = false;
@@ -1016,9 +1115,41 @@ function showSupportSendPanel(agentName){
       '<textarea id="support-msg-input" placeholder="Message to user…" style="flex:1;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:3px;padding:9px 11px;color:var(--text);font-family:Lora,serif;font-style:italic;font-size:12px;outline:none;resize:none;height:60px;line-height:1.6"></textarea>' +
       '<button onclick="sendSupportMessage()" style="padding:0 16px;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.25);border-radius:3px;color:#4ade80;font-family:Geist,sans-serif;font-size:9px;letter-spacing:.1em;text-transform:uppercase;cursor:pointer;transition:all .2s;white-space:nowrap">Send</button>' +
     '</div>' +
-    '<div style="display:flex;gap:6px">' +
+    '<div style="display:flex;gap:6px;margin-bottom:8px">' +
       '<button onclick="forceReload()" style="flex:1;padding:7px;background:rgba(251,191,36,.06);border:1px solid rgba(251,191,36,.18);border-radius:3px;color:#fbbf24;font-family:Geist,sans-serif;font-size:9px;letter-spacing:.1em;text-transform:uppercase;cursor:pointer;transition:all .2s">Force reload</button>' +
       '<button onclick="openCannedManager()" style="flex:1;padding:7px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);border-radius:3px;color:var(--text3);font-family:Geist,sans-serif;font-size:9px;letter-spacing:.1em;text-transform:uppercase;cursor:pointer;transition:all .2s">Edit canned</button>' +
+    '</div>' +
+    // Card composer
+    '<div id="card-composer">' +
+      '<div style="font-family:Geist,sans-serif;font-size:8.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--text4);margin-bottom:8px;display:flex;align-items:center;justify-content:space-between">' +
+        '<span>Send a card</span>' +
+        '<button onclick="toggleCardComposer()" style="font-size:9px;color:var(--text4);background:none;border:none;cursor:pointer;letter-spacing:.1em;text-transform:uppercase;font-family:Geist,sans-serif" id="card-composer-toggle">Show</button>' +
+      '</div>' +
+      '<div id="card-composer-fields" style="display:none">' +
+        // Presets
+        '<div style="font-family:Geist,sans-serif;font-size:8px;letter-spacing:.1em;text-transform:uppercase;color:var(--text4);margin-bottom:6px">Presets</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px" id="card-presets"></div>' +
+        // Fields
+        '<input id="card-label" placeholder="Label (e.g. From support, Notice, Reminder…)" style="font-family:Geist,sans-serif;font-size:11px">' +
+        '<input id="card-title" placeholder="Title (optional — e.g. A note before we continue)">' +
+        '<textarea id="card-body" placeholder="Card body text…"></textarea>' +
+        '<input id="card-footer" placeholder="Footer (defaults to agent name)">' +
+        // Accent + dismissable row
+        '<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">' +
+          '<div style="font-family:Geist,sans-serif;font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--text4)">Accent</div>' +
+          '<div style="display:flex;gap:6px" id="accent-swatches">' +
+            '<div class="accent-swatch selected" data-accent="purple" onclick="selectAccent(this)" style="background:linear-gradient(135deg,#a78bfa,#f472b6,#38bdf8)" title="Purple"></div>' +
+            '<div class="accent-swatch" data-accent="amber"  onclick="selectAccent(this)" style="background:#fbbf24" title="Amber"></div>' +
+            '<div class="accent-swatch" data-accent="green"  onclick="selectAccent(this)" style="background:#4ade80" title="Green"></div>' +
+            '<div class="accent-swatch" data-accent="red"    onclick="selectAccent(this)" style="background:#ff6b6b" title="Red"></div>' +
+            '<div class="accent-swatch" data-accent="neutral"onclick="selectAccent(this)" style="background:#585450" title="Neutral"></div>' +
+          '</div>' +
+          '<label style="display:flex;align-items:center;gap:6px;font-family:Geist,sans-serif;font-size:9px;color:var(--text3);cursor:pointer;margin-left:auto">' +
+            '<input type="checkbox" id="card-dismissable" checked style="accent-color:#a78bfa"> Dismissable' +
+          '</label>' +
+        '</div>' +
+        '<button onclick="sendAdminCard()" style="width:100%;padding:8px;background:rgba(167,139,250,.1);border:1px solid rgba(167,139,250,.25);border-radius:3px;color:#a78bfa;font-family:Geist,sans-serif;font-size:9px;letter-spacing:.14em;text-transform:uppercase;cursor:pointer;transition:all .2s">Send card</button>' +
+      '</div>' +
     '</div>';
 
   // Insert before the conv-viewer's note area or append
@@ -1260,7 +1391,7 @@ function renderConvList(convs){
 }
 
 // ── Conversation viewer ───────────────────────────────────────
-function selectConv(id){
+function selectConv(id, _retry){
   currentConvId = id;
   document.querySelectorAll('.conv-item').forEach(function(el){ el.classList.remove('active'); });
   var ci = document.getElementById('ci-' + id);
@@ -1270,21 +1401,41 @@ function selectConv(id){
 
   fetch(WORKER + '/admin/conv?account=' + encodeURIComponent(currentAccount) + '&id=' + encodeURIComponent(id), {
     headers: { 'X-Admin-Key': ADMIN_KEY }
-  }).then(function(r){ return r.json(); }).then(function(conv){
+  }).then(function(r){
+    if(!r.ok){
+      // KV eventual consistency — retry once after 1.5s on 404
+      if(r.status === 404 && !_retry){
+        setTimeout(function(){ selectConv(id, true); }, 1500);
+        return null;
+      }
+      throw new Error('HTTP ' + r.status);
+    }
+    return r.json();
+  }).then(function(conv){
+    if(!conv) return; // retry pending
+    if(conv.error){
+      document.getElementById('conv-viewer').innerHTML =
+        '<div class="loading" style="color:var(--text4)">Could not load conversation: ' + esc(conv.error) + '</div>';
+      return;
+    }
     renderConvViewer(conv);
-
-    // Tell backend we are reviewing this specific convo
     fetch(WORKER + '/admin/reviewing', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Admin-Key': ADMIN_KEY },
       body: JSON.stringify({ account: currentAccount, active: true, convId: id })
     });
-  }).catch(function(){
-    document.getElementById('conv-viewer').innerHTML = '<div class="loading">Failed to load</div>';
+  }).catch(function(e){
+    document.getElementById('conv-viewer').innerHTML =
+      '<div class="loading" style="color:var(--text4)">Failed to load. <span style="cursor:pointer;text-decoration:underline" onclick="selectConv(&quot;' + esc(id) + '&quot;)">Retry</span></div>';
   });
 }
 
 function renderConvViewer(conv){
+  if(!conv || conv.error || !conv.messages){
+    document.getElementById('conv-viewer').innerHTML =
+      '<div class="empty"><span class="empty-star">✦</span><span class="empty-text">' + (conv && conv.error ? esc(conv.error) : 'No messages') + '</span></div>';
+    return;
+  }
   var msgs = (conv.messages || []).filter(function(m){ return m.role !== 'system'; });
   var notes = conv.adminNotes || [];
 
