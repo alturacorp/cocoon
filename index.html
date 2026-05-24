@@ -77,7 +77,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:Geist,s
 .tb-dot{width:5px;height:5px;border-radius:50%;background:#4ade80;animation:pulse 2s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}
 
-.main{display:flex!important;flex:1;overflow:hidden;min-height:0}
+.main{display:flex;flex:1;overflow:hidden;min-height:0}
 
 /* ── Sidebar ── */
 .sidebar{
@@ -117,7 +117,8 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:Geist,s
 /* ── Account panel ── */
 .account-panel{
   width:340px;border-right:1px solid var(--border2);
-  display:flex;flex-direction:column;flex-shrink:0;
+  display:flex;flex-direction:column;flex-shrink:0;min-height:0;
+  overflow:hidden;
 }
 .ap-header{padding:20px 20px 16px;border-bottom:1px solid var(--border2)}
 .ap-name{font-size:16px;color:var(--text);margin-bottom:4px}
@@ -176,7 +177,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:Geist,s
 .cv-btn.flag-btn{border-color:rgba(251,191,36,.2);color:var(--amber)}
 .cv-btn.flag-btn:hover{background:rgba(251,191,36,.08)}
 
-.cv-msgs{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:10px}
+.cv-msgs{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:10px;min-height:0}
 
 .msg-row{display:flex;gap:12px;align-items:flex-start}
 .msg-row.user-row{flex-direction:row-reverse}
@@ -298,7 +299,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:Geist,s
 .tb-tab{background:none;border:none;color:var(--text4);font-family:Geist,sans-serif;font-size:9px;letter-spacing:.12em;text-transform:uppercase;cursor:pointer;padding:4px 8px;border-radius:2px;transition:all .2s;}
 .tb-tab:hover{color:var(--text3);}
 .tb-tab.active{color:var(--purple);background:rgba(167,139,250,.08);}
-#alerts-panel,#audit-panel{display:none;flex:1;overflow-y:auto;padding:20px 24px;flex-direction:column;}
+#alerts-panel,#audit-panel{display:none;flex:1;overflow-y:auto;padding:20px 24px;}
 .alert-item{padding:12px 14px;border:1px solid rgba(255,255,255,.06);border-radius:3px;margin-bottom:8px;background:rgba(255,255,255,.01);}
 .alert-item.high{border-color:rgba(255,107,107,.2);}
 .alert-item.unread{border-left:2px solid #f472b6;}
@@ -377,44 +378,49 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:Geist,s
       </div>
     </div>
 
-    <!-- Content -->
+    <!-- Content — tabs share this space -->
     <div class="content">
 
-      <!-- Account panel -->
-      <div class="account-panel" id="account-panel">
-        <div class="empty">
-          <span class="empty-star">✦</span>
-          <span class="empty-text">Select an account</span>
-        </div>
-      </div>
+      <!-- Accounts tab content -->
+      <div id="tab-content-accounts" style="flex:1;display:flex;overflow:hidden">
 
-      <!-- Conversation viewer -->
-      <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
-        <div class="conv-viewer" id="conv-viewer" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
+        <!-- Account panel -->
+        <div class="account-panel" id="account-panel">
           <div class="empty">
             <span class="empty-star">✦</span>
-            <span class="empty-text">Select a conversation</span>
+            <span class="empty-text">Select an account</span>
           </div>
         </div>
-        <!-- Persistent support send panel slot — never wiped by conv render -->
-        <div id="support-panel-slot"></div>
+
+        <!-- Conversation viewer -->
+        <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0">
+          <div class="conv-viewer" id="conv-viewer" style="flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0">
+            <div class="empty">
+              <span class="empty-star">✦</span>
+              <span class="empty-text">Select a conversation</span>
+            </div>
+          </div>
+          <!-- Persistent support send panel slot -->
+          <div id="support-panel-slot"></div>
+        </div>
+
       </div>
 
-    </div>
-
-    <!-- Alerts panel -->
-    <div id="alerts-panel">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-        <div style="font-family:Geist,sans-serif;font-size:8.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--text4)">Keyword Alerts</div>
-        <button class="ap-btn" style="flex:0;padding:6px 12px" onclick="openKeywordManager()">Manage keywords</button>
+      <!-- Alerts tab content -->
+      <div id="tab-content-alerts" style="display:none;flex:1;overflow-y:auto;padding:20px 24px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+          <div style="font-family:Geist,sans-serif;font-size:8.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--text4)">Keyword Alerts</div>
+          <button class="ap-btn" style="flex:0;padding:6px 12px" onclick="openKeywordManager()">Manage keywords</button>
+        </div>
+        <div id="alerts-list"><div class="loading">Loading…</div></div>
       </div>
-      <div id="alerts-list"><div class="loading">Loading…</div></div>
-    </div>
 
-    <!-- Audit log panel -->
-    <div id="audit-panel">
-      <div style="font-family:Geist,sans-serif;font-size:8.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--text4);margin-bottom:20px">Audit Log</div>
-      <div id="audit-list"><div class="loading">Loading…</div></div>
+      <!-- Audit tab content -->
+      <div id="tab-content-audit" style="display:none;flex:1;overflow-y:auto;padding:20px 24px">
+        <div style="font-family:Geist,sans-serif;font-size:8.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--text4);margin-bottom:20px">Audit Log</div>
+        <div id="audit-list"><div class="loading">Loading…</div></div>
+      </div>
+
     </div>
 
   </div>
@@ -1012,12 +1018,9 @@ function forceReload(){
 function switchTab(tab){
   document.querySelectorAll('.tb-tab').forEach(function(t){ t.classList.remove('active'); });
   document.getElementById('tab-' + tab).classList.add('active');
-  // Use visibility instead of display:none so flex layout is preserved
-  document.querySelector('.main').style.visibility     = tab === 'accounts' ? '' : 'hidden';
-  document.querySelector('.main').style.position       = tab === 'accounts' ? '' : 'absolute';
-  document.querySelector('.main').style.pointerEvents  = tab === 'accounts' ? '' : 'none';
-  document.getElementById('alerts-panel').style.display = tab === 'alerts'   ? 'flex' : 'none';
-  document.getElementById('audit-panel').style.display  = tab === 'audit'    ? 'flex' : 'none';
+  document.getElementById('tab-content-accounts').style.display = tab === 'accounts' ? 'flex'  : 'none';
+  document.getElementById('tab-content-alerts').style.display   = tab === 'alerts'   ? 'block' : 'none';
+  document.getElementById('tab-content-audit').style.display    = tab === 'audit'    ? 'block' : 'none';
   if(tab === 'alerts') loadAlerts();
   if(tab === 'audit')  loadAudit();
 }
