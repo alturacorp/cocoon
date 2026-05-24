@@ -352,6 +352,8 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:Geist,s
       <span class="tb-dot"></span>
       <span id="tb-account-count">—</span>
     </div>
+    <div class="tb-sep"></div>
+    <button id="maint-btn" onclick="toggleMaintenance()" style="font-family:Geist,sans-serif;font-size:9px;letter-spacing:.12em;text-transform:uppercase;padding:4px 10px;border-radius:2px;border:1px solid rgba(255,255,255,.07);background:none;color:var(--text3);cursor:pointer;transition:all .2s">Maintenance off</button>
   </div>
 
   <!-- Main -->
@@ -359,6 +361,10 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:Geist,s
 
     <!-- Sidebar: accounts list -->
     <div class="sidebar">
+      <div class="sb-section">Support queue <span id="waiting-badge" style="display:none;background:#4ade80;color:#0a0908;font-size:8px;padding:1px 5px;border-radius:8px;margin-left:4px;font-weight:700"></span></div>
+      <div id="sb-waiting" style="padding:0 8px 8px">
+        <div style="font-size:10px;color:var(--text4);font-family:Lora,serif;font-style:italic;padding:6px 4px" id="waiting-empty">No one waiting.</div>
+      </div>
       <div class="sb-section">Accounts</div>
       <div class="sb-accounts" id="sb-accounts">
         <div class="loading">Loading…</div>
@@ -405,6 +411,23 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:Geist,s
 </div>
 
 
+
+<!-- Canned responses manager -->
+<div class="modal-bg" id="canned-modal">
+  <div class="modal" style="width:560px;max-height:80vh;display:flex;flex-direction:column">
+    <div class="modal-title">Canned responses <span>— shared across all agents</span></div>
+    <div id="canned-list" style="flex:1;overflow-y:auto;margin-bottom:14px;max-height:400px"></div>
+    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px;border-top:1px solid rgba(255,255,255,.06);padding-top:14px">
+      <div class="modal-label">Add new</div>
+      <input class="modal-input" id="canned-label-input" placeholder="Label (e.g. Opening — picking up)">
+      <textarea class="modal-input" id="canned-text-input" placeholder="Response text…" style="height:70px;resize:none;font-family:Lora,serif;font-style:italic;font-size:12px;line-height:1.6"></textarea>
+    </div>
+    <div class="modal-row">
+      <button class="modal-btn cancel" onclick="document.getElementById('canned-modal').classList.remove('open')">Close</button>
+      <button class="modal-btn confirm" onclick="addCannedResponse()">Add &amp; save</button>
+    </div>
+  </div>
+</div>
 <!-- Keyword manager modal -->
 <div class="modal-bg" id="kw-modal">
   <div class="modal" style="width:480px">
@@ -468,6 +491,286 @@ let currentAccount = null;
 let currentConvId = null;
 let allAccounts = [];
 
+
+
+
+// ── Maintenance mode ──────────────────────────────────────────
+var _maintenanceActive = false;
+
+function checkMaintenanceStatus(){
+  if(!ADMIN_KEY) return;
+  fetch(WORKER + '/admin/maintenance', { headers: { 'X-Admin-Key': ADMIN_KEY } })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      _maintenanceActive = !!(d.maintenance && d.maintenance.active);
+      updateMaintenanceBtn();
+    }).catch(function(){});
+}
+
+function updateMaintenanceBtn(){
+  var btn = document.getElementById('maint-btn');
+  if(!btn) return;
+  if(_maintenanceActive){
+    btn.textContent   = 'Maintenance ON';
+    btn.style.color   = '#fbbf24';
+    btn.style.borderColor = 'rgba(251,191,36,.3)';
+    btn.style.background  = 'rgba(251,191,36,.08)';
+  } else {
+    btn.textContent   = 'Maintenance off';
+    btn.style.color   = 'var(--text3)';
+    btn.style.borderColor = 'rgba(255,255,255,.07)';
+    btn.style.background  = 'none';
+  }
+}
+
+function toggleMaintenance(){
+  if(_maintenanceActive){
+    // Turn off
+    fetch(WORKER + '/admin/maintenance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Key': ADMIN_KEY },
+      body: JSON.stringify({ active: false }),
+    }).then(function(){ _maintenanceActive = false; updateMaintenanceBtn(); showToast('Maintenance mode off'); });
+  } else {
+    // Turn on — ask for message
+    var msg = prompt('Maintenance message (shown to users):', 'Lume is temporarily unavailable for maintenance. We will be back shortly.');
+    if(msg === null) return; // cancelled
+    var until = prompt('Estimated return time (optional, e.g. "2:30 PM"):', '');
+    var untilTs = null;
+    if(until && until.trim()){
+      // Try to parse as a time today
+      var d = new Date(); var parts = until.match(/(\d+):(\d+)\s*(am|pm)?/i);
+      if(parts){ var h = parseInt(parts[1]); var m2 = parseInt(parts[2]);
+        if(parts[3] && parts[3].toLowerCase()==='pm' && h < 12) h += 12;
+        d.setHours(h, m2, 0, 0); untilTs = d.getTime();
+      }
+    }
+    fetch(WORKER + '/admin/maintenance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Key': ADMIN_KEY },
+      body: JSON.stringify({ active: true, message: msg, until: untilTs }),
+    }).then(function(){ _maintenanceActive = true; updateMaintenanceBtn(); showToast('Maintenance mode ON — users will see the screen'); });
+  }
+}
+
+// ── Live typing ───────────────────────────────────────────────
+var _typingInterval = null;
+
+function startTypingPoll(){
+  if(_typingInterval) clearInterval(_typingInterval);
+  _typingInterval = setInterval(pollTyping, 5000);
+}
+
+function stopTypingPoll(){
+  if(_typingInterval){ clearInterval(_typingInterval); _typingInterval = null; }
+  var preview = document.getElementById('typing-preview');
+  if(preview) preview.style.display = 'none';
+}
+
+function pollTyping(){
+  if(!currentAccount || !ADMIN_KEY) return;
+  fetch(WORKER + '/admin/typing?account=' + encodeURIComponent(currentAccount), {
+    headers: { 'X-Admin-Key': ADMIN_KEY }
+  }).then(function(r){ return r.json(); }).then(function(d){
+    var preview = document.getElementById('typing-preview');
+    var textEl  = document.getElementById('typing-text');
+    if(!preview || !textEl) return;
+    if(d.typing && d.typing.text && (Date.now() - d.typing.at) < 15000){
+      textEl.textContent = d.typing.text;
+      preview.style.display = 'block';
+    } else {
+      preview.style.display = 'none';
+    }
+  }).catch(function(){});
+}
+
+// Start/stop typing poll with support session
+var _origSupportConnect = supportConnect;
+supportConnect = function(){
+  _origSupportConnect();
+  setTimeout(startTypingPoll, 1000);
+};
+var _origSupportDisconnect = supportDisconnect;
+supportDisconnect = function(){
+  _origSupportDisconnect();
+  stopTypingPoll();
+};
+
+// ── Session notes ─────────────────────────────────────────────
+var _sessionNoteDebounce = null;
+
+function loadSessionNote(){
+  if(!currentAccount || !ADMIN_KEY) return;
+  fetch(WORKER + '/admin/session_note?account=' + encodeURIComponent(currentAccount), {
+    headers: { 'X-Admin-Key': ADMIN_KEY }
+  }).then(function(r){ return r.json(); }).then(function(d){
+    var inp = document.getElementById('session-note-input');
+    if(inp && d.note) inp.value = d.note.note || '';
+  }).catch(function(){});
+}
+
+function debounceSaveSessionNote(){
+  clearTimeout(_sessionNoteDebounce);
+  _sessionNoteDebounce = setTimeout(saveSessionNote, 1500);
+}
+
+function saveSessionNote(){
+  var inp = document.getElementById('session-note-input');
+  if(!inp || !currentAccount || !ADMIN_KEY) return;
+  fetch(WORKER + '/admin/session_note', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Key': ADMIN_KEY },
+    body: JSON.stringify({ account: currentAccount, note: inp.value }),
+  }).catch(function(){});
+}
+
+// Load session note when support panel appears
+var _origShowSupportSendPanel = showSupportSendPanel;
+showSupportSendPanel = function(agentName){
+  _origShowSupportSendPanel(agentName);
+  setTimeout(loadSessionNote, 300);
+};
+
+// ── Conversation search ───────────────────────────────────────
+function filterConvs(query){
+  var items = document.querySelectorAll('#ap-convs .conv-item');
+  var q = query.toLowerCase().trim();
+  items.forEach(function(item){
+    var label = (item.querySelector('.ci-label') || {}).textContent || '';
+    item.style.display = (!q || label.toLowerCase().includes(q)) ? '' : 'none';
+  });
+}
+
+// ── Quick account actions in support panel ────────────────────
+function quickLockout(){
+  if(!currentAccount) return;
+  var reason = prompt('Lockout reason:', 'Policy violation during support session');
+  if(reason === null) return;
+  var mins   = prompt('Duration in minutes (blank = permanent):', '60');
+  var permanent = !mins || !mins.trim();
+  fetch(WORKER + '/admin/lockout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Key': ADMIN_KEY },
+    body: JSON.stringify({ account: currentAccount, reason: reason, durationMinutes: parseInt(mins)||60, permanent: permanent }),
+  }).then(function(){ showToast('Lockout issued'); refreshAll(); });
+}
+
+function quickUnlock(){
+  if(!currentAccount) return;
+  fetch(WORKER + '/admin/unlock', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Key': ADMIN_KEY },
+    body: JSON.stringify({ account: currentAccount }),
+  }).then(function(){ showToast('Unlocked'); refreshAll(); });
+}
+
+function quickRename(){
+  if(!currentAccount) return;
+  var name = prompt('Display name:', '');
+  if(!name || !name.trim()) return;
+  fetch(WORKER + '/admin/rename', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Key': ADMIN_KEY },
+    body: JSON.stringify({ account: currentAccount, displayName: name.trim() }),
+  }).then(function(){ showToast('Renamed to ' + name.trim()); refreshAll(); });
+}
+
+// ── Canned responses ──────────────────────────────────────────
+var _cannedResponses = [];
+
+function loadCannedResponses(cb){
+  fetch(WORKER + '/admin/canned', { headers: { 'X-Admin-Key': ADMIN_KEY } })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      _cannedResponses = d.responses || [];
+      if(cb) cb(_cannedResponses);
+      renderCannedChips();
+    }).catch(function(){});
+}
+
+function renderCannedChips(){
+  var el = document.getElementById('canned-chips');
+  if(!el) return;
+  el.innerHTML = _cannedResponses.map(function(r){
+    return '<button onclick="useCanned(' + r.id + ')" style="' +
+      'padding:4px 9px;background:rgba(74,222,128,.05);border:1px solid rgba(74,222,128,.12);' +
+      'border-radius:2px;color:#4ade80;font-family:Geist,sans-serif;font-size:8.5px;' +
+      'letter-spacing:.06em;cursor:pointer;transition:all .2s;white-space:nowrap' +
+    '">' + esc(r.label) + '</button>';
+  }).join('');
+}
+
+function useCanned(id){
+  var r = _cannedResponses.find(function(r){ return r.id === id; });
+  if(!r) return;
+  var inp = document.getElementById('support-msg-input');
+  if(inp){ inp.value = r.text; inp.focus(); }
+}
+
+function openCannedManager(){
+  loadCannedResponses(function(responses){
+    renderCannedList(responses);
+    document.getElementById('canned-modal').classList.add('open');
+  });
+}
+
+function renderCannedList(responses){
+  var el = document.getElementById('canned-list');
+  if(!el) return;
+  if(!responses.length){ el.innerHTML = '<div style="color:var(--text4);font-size:11px;font-family:Lora,serif;font-style:italic;padding:8px 0">No responses yet.</div>'; return; }
+  el.innerHTML = responses.map(function(r){
+    return '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.04)">' +
+      '<div style="flex:1">' +
+        '<div style="font-family:Geist,sans-serif;font-size:10px;color:var(--text2);margin-bottom:4px">' + esc(r.label) + '</div>' +
+        '<div style="font-family:Lora,serif;font-style:italic;font-size:11.5px;color:var(--text4);line-height:1.6">' + esc(r.text) + '</div>' +
+      '</div>' +
+      '<button onclick="removeCannedResponse(' + r.id + ')" style="font-size:10px;color:var(--text4);background:none;border:none;cursor:pointer;flex-shrink:0;padding:2px 4px;transition:color .2s" onmouseover="this.style.color=&quot;#ff6b6b&quot;" onmouseout="this.style.color=&quot;var(--text4)&quot;">&#10005;</button>' +
+    '</div>';
+  }).join('');
+}
+
+function addCannedResponse(){
+  var label = document.getElementById('canned-label-input').value.trim();
+  var text  = document.getElementById('canned-text-input').value.trim();
+  if(!label || !text){ showToast('Label and text required'); return; }
+  var newId = (_cannedResponses.length ? Math.max.apply(null, _cannedResponses.map(function(r){ return r.id; })) + 1 : 1);
+  _cannedResponses.push({ id: newId, label: label, text: text });
+  saveCannedResponses(function(){
+    document.getElementById('canned-label-input').value = '';
+    document.getElementById('canned-text-input').value  = '';
+    renderCannedList(_cannedResponses);
+    renderCannedChips();
+    showToast('Added');
+  });
+}
+
+function removeCannedResponse(id){
+  _cannedResponses = _cannedResponses.filter(function(r){ return r.id !== id; });
+  saveCannedResponses(function(){
+    renderCannedList(_cannedResponses);
+    renderCannedChips();
+    showToast('Removed');
+  });
+}
+
+function saveCannedResponses(cb){
+  fetch(WORKER + '/admin/canned', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Key': ADMIN_KEY },
+    body: JSON.stringify({ responses: _cannedResponses }),
+  }).then(function(){ if(cb) cb(); });
+}
+
+// ── Force reload ──────────────────────────────────────────────
+function forceReload(){
+  if(!currentAccount) return;
+  var msg = 'A support agent has asked you to reload. This will only take a moment.';
+  fetch(WORKER + '/admin/support/reload', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Key': ADMIN_KEY },
+    body: JSON.stringify({ account: currentAccount, message: msg }),
+  }).then(function(){ showToast('Reload request sent — user will see it within 30s'); });
+}
 
 // ── Tab switching ─────────────────────────────────────────────
 function switchTab(tab){
@@ -624,7 +927,7 @@ function saveAcctNote(){
 
 // ── Unread alert count in badge ───────────────────────────────
 function checkAlertBadge(){
-  if(!ADMIN_KEY) return;
+  if(!ADMIN_KEY || ADMIN_KEY.length === 0) return;
   fetch(WORKER + '/admin/alerts?unread=1', { headers: { 'X-Admin-Key': ADMIN_KEY } })
     .then(function(r){ return r.json(); })
     .then(function(d){
@@ -634,6 +937,165 @@ function checkAlertBadge(){
       else          { badge.style.display='none'; }
     }).catch(function(){});
 }
+
+// ── Support agent ─────────────────────────────────────────────
+var _agentConnected = false;
+
+function supportConnect(){
+  if(!currentAccount) return;
+  var name = (document.getElementById('agent-name-input').value || '').trim();
+  if(!name){ showToast('Enter your name as agent first'); return; }
+
+  fetch(WORKER + '/admin/support/connect', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Key': ADMIN_KEY },
+    body: JSON.stringify({ account: currentAccount, agentName: name }),
+  }).then(function(r){ return r.json(); }).then(function(){
+    _agentConnected = true;
+    showToast('Support session started — user notified');
+    document.getElementById('support-connect-btn').style.display    = 'none';
+    document.getElementById('support-disconnect-btn').style.display = '';
+    // Show send panel
+    showSupportSendPanel(name);
+    // Remove from waiting queue if present
+    loadWaitingQueue();
+  });
+}
+
+function supportDisconnect(){
+  if(!currentAccount) return;
+  var name = (document.getElementById('agent-name-input').value || '').trim() || 'Support';
+
+  fetch(WORKER + '/admin/support/disconnect', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Key': ADMIN_KEY },
+    body: JSON.stringify({ account: currentAccount, agentName: name }),
+  }).then(function(){
+    _agentConnected = false;
+    showToast('Support session ended');
+    document.getElementById('support-connect-btn').style.display    = '';
+    document.getElementById('support-disconnect-btn').style.display = 'none';
+    var panel = document.getElementById('support-send-panel');
+    if(panel) panel.remove();
+  });
+}
+
+function showSupportSendPanel(agentName){
+  var existing = document.getElementById('support-send-panel');
+  if(existing) existing.remove();
+
+  var cv = document.getElementById('conv-viewer');
+  if(!cv) return;
+
+  var panel = document.createElement('div');
+  panel.id = 'support-send-panel';
+  panel.style.cssText = 'border-top:1px solid rgba(255,255,255,.05);padding:14px 24px 18px;flex-shrink:0;display:flex;flex-direction:column;gap:8px;background:rgba(74,222,128,.03)';
+  panel.innerHTML =
+    '<div style="font-family:Geist,sans-serif;font-size:8.5px;letter-spacing:.14em;text-transform:uppercase;color:#4ade80;display:flex;align-items:center;gap:7px">' +
+      '<span style="width:5px;height:5px;border-radius:50%;background:#4ade80;animation:pulse 2s ease-in-out infinite;flex-shrink:0"></span>' +
+      'Active support session · ' + esc(agentName) +
+    '</div>' +
+    // Live typing preview
+    '<div id="typing-preview" style="display:none;margin:6px 0;padding:8px 10px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:3px">' +
+      '<div style="font-family:Geist,sans-serif;font-size:8px;letter-spacing:.12em;text-transform:uppercase;color:var(--text4);margin-bottom:4px">User is typing…</div>' +
+      '<div id="typing-text" style="font-family:Lora,serif;font-style:italic;font-size:12px;color:var(--text3);line-height:1.6"></div>' +
+    '</div>' +
+    // Session notes
+    '<div style="margin:4px 0">' +
+      '<div style="font-family:Geist,sans-serif;font-size:8px;letter-spacing:.12em;text-transform:uppercase;color:var(--text4);margin-bottom:4px">Session notes (persists after disconnect)</div>' +
+      '<textarea id="session-note-input" placeholder="Notes visible to all agents on this account…" style="width:100%;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:3px;padding:8px 9px;color:var(--text3);font-family:Lora,serif;font-style:italic;font-size:11.5px;outline:none;resize:none;height:52px;line-height:1.6" oninput="debounceSaveSessionNote()"></textarea>' +
+    '</div>' +
+    // Quick actions toolbar
+    '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:2px">' +
+      '<button onclick="quickLockout()" style="padding:4px 8px;background:rgba(255,107,107,.06);border:1px solid rgba(255,107,107,.15);border-radius:2px;color:var(--red);font-family:Geist,sans-serif;font-size:8px;letter-spacing:.1em;text-transform:uppercase;cursor:pointer;transition:all .2s">Lockout</button>' +
+      '<button onclick="quickUnlock()" style="padding:4px 8px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);border-radius:2px;color:var(--text3);font-family:Geist,sans-serif;font-size:8px;letter-spacing:.1em;text-transform:uppercase;cursor:pointer;transition:all .2s">Unlock</button>' +
+      '<button onclick="quickRename()" style="padding:4px 8px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);border-radius:2px;color:var(--text3);font-family:Geist,sans-serif;font-size:8px;letter-spacing:.1em;text-transform:uppercase;cursor:pointer;transition:all .2s">Rename</button>' +
+    '</div>' +
+    '<div id="canned-chips" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px"></div>' +
+    '<div style="display:flex;gap:8px;margin-bottom:6px">' +
+      '<textarea id="support-msg-input" placeholder="Message to user…" style="flex:1;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:3px;padding:9px 11px;color:var(--text);font-family:Lora,serif;font-style:italic;font-size:12px;outline:none;resize:none;height:60px;line-height:1.6"></textarea>' +
+      '<button onclick="sendSupportMessage()" style="padding:0 16px;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.25);border-radius:3px;color:#4ade80;font-family:Geist,sans-serif;font-size:9px;letter-spacing:.1em;text-transform:uppercase;cursor:pointer;transition:all .2s;white-space:nowrap">Send</button>' +
+    '</div>' +
+    '<div style="display:flex;gap:6px">' +
+      '<button onclick="forceReload()" style="flex:1;padding:7px;background:rgba(251,191,36,.06);border:1px solid rgba(251,191,36,.18);border-radius:3px;color:#fbbf24;font-family:Geist,sans-serif;font-size:9px;letter-spacing:.1em;text-transform:uppercase;cursor:pointer;transition:all .2s">Force reload</button>' +
+      '<button onclick="openCannedManager()" style="flex:1;padding:7px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);border-radius:3px;color:var(--text3);font-family:Geist,sans-serif;font-size:9px;letter-spacing:.1em;text-transform:uppercase;cursor:pointer;transition:all .2s">Edit canned</button>' +
+    '</div>';
+
+  // Insert before the conv-viewer's note area or append
+  var notesArea = cv.querySelector('.cv-add-note');
+  if(notesArea) cv.insertBefore(panel, notesArea);
+  else          cv.appendChild(panel);
+}
+
+function sendSupportMessage(){
+  var msg  = (document.getElementById('support-msg-input').value || '').trim();
+  var name = (document.getElementById('agent-name-input').value || '').trim() || 'Support';
+  if(!msg || !currentAccount) return;
+
+  fetch(WORKER + '/admin/support/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Key': ADMIN_KEY },
+    body: JSON.stringify({ account: currentAccount, message: msg, agentName: name }),
+  }).then(function(){
+    document.getElementById('support-msg-input').value = '';
+    showToast('Message sent');
+  });
+}
+
+// Enter sends, Shift+Enter newline
+document.addEventListener('keydown', function(e){
+  var inp = document.getElementById('support-msg-input');
+  if(document.activeElement === inp && e.key === 'Enter' && !e.shiftKey){
+    e.preventDefault();
+    sendSupportMessage();
+  }
+});
+
+// ── Waiting queue ─────────────────────────────────────────────
+function loadWaitingQueue(){
+  if(!ADMIN_KEY) return;
+  fetch(WORKER + '/admin/support/waiting', { headers: { 'X-Admin-Key': ADMIN_KEY } })
+    .then(function(r){ return r.json(); })
+    .then(function(d){ renderWaitingQueue(d.waiting || []); });
+}
+
+function renderWaitingQueue(waiting){
+  var el     = document.getElementById('sb-waiting');
+  var empty  = document.getElementById('waiting-empty');
+  var badge  = document.getElementById('waiting-badge');
+  if(!el) return;
+
+  if(!waiting.length){
+    if(empty) empty.style.display = 'block';
+    if(badge) badge.style.display = 'none';
+    // Remove any account items
+    el.querySelectorAll('.waiting-item').forEach(function(n){ n.remove(); });
+    return;
+  }
+
+  if(empty) empty.style.display = 'none';
+  if(badge){ badge.textContent = waiting.length; badge.style.display = 'inline'; }
+
+  // Remove old items and re-render
+  el.querySelectorAll('.waiting-item').forEach(function(n){ n.remove(); });
+  waiting.forEach(function(w){
+    var item = document.createElement('div');
+    item.className = 'waiting-item sb-account';
+    item.style.cssText += ';border-left:2px solid rgba(74,222,128,.3)';
+    item.onclick = function(){ selectAccount(w.account); };
+    var init = (w.displayName[0]||'?').toUpperCase();
+    var ago  = relTime(w.waitingSince);
+    item.innerHTML =
+      '<div class="sb-av" style="background:rgba(74,222,128,.1);border-color:rgba(74,222,128,.2);color:#4ade80">' + init + '</div>' +
+      '<div class="sb-info">' +
+        '<div class="sb-name">' + esc(w.displayName) + '</div>' +
+        '<div class="sb-meta">Waiting ' + ago + '</div>' +
+      '</div>' +
+      '<span style="font-size:8px;color:#4ade80;flex-shrink:0">&#9654;</span>';
+    el.appendChild(item);
+  });
+}
+
 // ── Auth ──────────────────────────────────────────────────────
 function doAuth(){
   const key = document.getElementById('admin-key-input').value.trim();
@@ -647,6 +1109,8 @@ function doAuth(){
     document.getElementById('auth-screen').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
     checkAlertBadge();
+    loadWaitingQueue();
+    checkMaintenanceStatus();
     return r.json().then(function(d){ renderAccounts(d.accounts || []); });
   }).catch(function(){ showAuthErr('Could not connect to worker'); });
 }
@@ -734,6 +1198,14 @@ function renderAccountPanel(a){
         '<button class="ap-btn primary" onclick="openReview()">Start review</button>' +
         '<button class="ap-btn" onclick="stopReview()">End review</button>' +
       '</div>' +
+      '<div class="action-row" style="flex-direction:column;gap:6px">' +
+        '<div style="font-family:Geist,sans-serif;font-size:8.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--text4);padding:4px 0 2px">Support agent</div>' +
+        '<input id="agent-name-input" placeholder="Your name as agent…" style="background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:3px;padding:7px 9px;color:var(--text);font-family:Geist,sans-serif;font-size:11px;outline:none;width:100%">' +
+        '<div style="display:flex;gap:6px">' +
+          '<button class="ap-btn primary" id="support-connect-btn" onclick="supportConnect()">Connect</button>' +
+          '<button class="ap-btn danger" id="support-disconnect-btn" onclick="supportDisconnect()" style="display:none">Disconnect</button>' +
+        '</div>' +
+      '</div>' +
       '<div class="action-row">' +
         '<button class="ap-btn" onclick="openAcctNotes()">Account notes</button>' +
       '</div>' +
@@ -751,6 +1223,9 @@ function renderAccountPanel(a){
         '<textarea id="msg-input" placeholder="Message to user via Lume…" style="width:100%;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:3px;padding:8px 9px;color:var(--text);font-family:Lora,serif;font-style:italic;font-size:12px;outline:none;resize:none;height:62px;line-height:1.6"></textarea>' +
         '<button class="ap-btn primary" onclick="sendMessage()" style="width:100%">Send via Lume</button>' +
       '</div>' +
+    '</div>' +
+    '<div style="padding:10px 12px 0">' +
+      '<input id="conv-search" placeholder="Search conversations…" oninput="filterConvs(this.value)" style="width:100%;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:3px;padding:7px 9px;color:var(--text2);font-family:Geist,sans-serif;font-size:11px;outline:none">' +
     '</div>' +
     '<div class="ap-convs" id="ap-convs"><div class="loading">Loading conversations…</div></div>';
 }
@@ -816,9 +1291,14 @@ function renderConvViewer(conv){
   var msgsHtml = msgs.map(function(m){
     var isUser = m.role === 'user';
     var content = esc(typeof m.content === 'string' ? m.content : JSON.stringify(m.content));
+    // Interpolate timestamp from savedAt across messages
+    var msgTs = conv.savedAt ? new Date(conv.savedAt).toLocaleString() : '';
     return '<div class="msg-row' + (isUser ? ' user-row' : '') + '">' +
       '<div class="msg-role">' + (isUser ? 'user' : 'lume') + '</div>' +
-      '<div class="msg-bubble">' + content + '</div>' +
+      '<div style="flex:1">' +
+        '<div class="msg-bubble">' + content + '</div>' +
+        (msgTs && i === msgs.length - 1 ? '<div style="font-family:Geist Mono,monospace;font-size:8.5px;color:var(--text4);margin-top:4px;' + (isUser ? 'text-align:right' : '') + '">' + msgTs + '</div>' : '') +
+      '</div>' +
     '</div>';
   }).join('');
 
@@ -1000,6 +1480,8 @@ function refreshAll(){
       }
     });
   checkAlertBadge();
+  loadWaitingQueue();
+  checkMaintenanceStatus();
 }
 
 // ── Utils ─────────────────────────────────────────────────────
