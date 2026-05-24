@@ -1431,67 +1431,78 @@ function selectConv(id, _retry){
 }
 
 function renderConvViewer(conv){
-  if(!conv || conv.error || !conv.messages){
-    document.getElementById('conv-viewer').innerHTML =
-      '<div class="empty"><span class="empty-star">✦</span><span class="empty-text">' + (conv && conv.error ? esc(conv.error) : 'No messages') + '</span></div>';
-    return;
-  }
-  var msgs = (conv.messages || []).filter(function(m){ return m.role !== 'system'; });
-  var notes = conv.adminNotes || [];
+  var cv = document.getElementById('conv-viewer');
+  if(!cv) return;
 
-  var lastTs = conv.savedAt ? new Date(conv.savedAt).toLocaleString() : '';
-  var msgsHtml = msgs.map(function(m, i){
-    var isUser  = m.role === 'user';
-    var raw     = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
-    // Strip markdown bold/italic before escaping so **name** doesn't render as raw asterisks
-    var cleaned = raw.replace(/\*\*(.+?)\*\*/g, '$1').replace(/\*(.+?)\*/g, '$1');
-    var content = esc(cleaned);
-    var showTs  = (i === msgs.length - 1) && lastTs;
-    return '<div class="msg-row' + (isUser ? ' user-row' : '') + '">' +
-      '<div class="msg-role">' + (isUser ? 'user' : 'lume') + '</div>' +
-      '<div style="flex:1">' +
-        '<div class="msg-bubble">' + content + '</div>' +
-        (showTs ? '<div style="font-family:Geist Mono,monospace;font-size:8.5px;color:var(--text4);margin-top:4px;' + (isUser ? 'text-align:right' : '') + '">' + lastTs + '</div>' : '') +
-      '</div>' +
-    '</div>';
-  }).join('');
-
-  var notesHtml = notes.length > 0
-    ? notes.map(function(n){
-        return '<div class="note-item ' + (n.severity || 'info') + '">' +
-          '<div class="note-text">' + esc(n.note) + '</div>' +
-          '<div class="note-meta">' + n.severity + ' · ' + new Date(n.at).toLocaleString() + '</div>' +
-        '</div>';
-      }).join('')
-    : '<div style="color:var(--text4);font-size:11px;font-family:Lora,serif;font-style:italic">No notes yet.</div>';
-
-  var headerTags = '';
-  if(conv.flagged) headerTags += '<span class="tag amber" style="font-size:8px;padding:1px 6px">Flagged</span> ';
-  if(conv.aupFlags && conv.aupFlags.length) headerTags += '<span class="tag red" style="font-size:8px;padding:1px 6px">' + conv.aupFlags.length + ' AUP event' + (conv.aupFlags.length !== 1 ? 's' : '') + '</span>';
+  // Preserve support send panel if present
+  var sendPanel = document.getElementById('support-send-panel');
 
   try {
-  document.getElementById('conv-viewer').innerHTML =
-    '<div class="cv-header">' +
-      '<div class="cv-title">' + esc(conv.label || 'Untitled') + ' ' + headerTags + '</div>' +
-      '<div class="cv-actions">' +
-        '<button class="cv-btn flag-btn" onclick="toggleFlag()">' + (conv.flagged ? 'Unflag' : 'Flag') + '</button>' +
-        '<button class="cv-btn" onclick="copyConvText()">Copy</button>' +
+    if(!conv || conv.error || !conv.messages){
+      cv.innerHTML = '<div class="empty"><span class="empty-star">&#10022;</span><span class="empty-text">' + (conv && conv.error ? esc(String(conv.error)) : 'No messages') + '</span></div>';
+      if(sendPanel) cv.appendChild(sendPanel);
+      return;
+    }
+
+    var filteredMsgs = (conv.messages || []).filter(function(m){ return m.role !== 'system'; });
+    var notes        = conv.adminNotes || [];
+    var lastTs       = conv.savedAt ? new Date(conv.savedAt).toLocaleString() : '';
+
+    var msgsHtml = filteredMsgs.map(function(m, i){
+      var isUser  = m.role === 'user';
+      var raw     = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+      var cleaned = raw.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1');
+      var content = esc(cleaned);
+      var showTs  = (i === filteredMsgs.length - 1) && lastTs;
+      return '<div class="msg-row' + (isUser ? ' user-row' : '') + '">' +
+        '<div class="msg-role">' + (isUser ? 'user' : 'lume') + '</div>' +
+        '<div style="flex:1">' +
+          '<div class="msg-bubble">' + content + '</div>' +
+          (showTs ? '<div style="font-family:Geist Mono,monospace;font-size:8.5px;color:var(--text4);margin-top:4px' + (isUser ? ';text-align:right' : '') + '">' + esc(lastTs) + '</div>' : '') +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    var notesHtml = notes.length > 0
+      ? notes.map(function(n){
+          return '<div class="note-item ' + esc(n.severity || 'info') + '">' +
+            '<div class="note-text">' + esc(String(n.note || '')) + '</div>' +
+            '<div class="note-meta">' + esc(n.severity || 'info') + ' · ' + new Date(n.at).toLocaleString() + '</div>' +
+          '</div>';
+        }).join('')
+      : '<div style="color:var(--text4);font-size:11px;font-family:Lora,serif;font-style:italic">No notes yet.</div>';
+
+    var headerTags = '';
+    if(conv.flagged) headerTags += '<span class="tag amber" style="font-size:8px;padding:1px 6px">Flagged</span> ';
+    if(conv.aupFlags && conv.aupFlags.length) headerTags += '<span class="tag red" style="font-size:8px;padding:1px 6px">' + conv.aupFlags.length + ' AUP event' + (conv.aupFlags.length !== 1 ? 's' : '') + '</span>';
+
+    cv.innerHTML =
+      '<div class="cv-header">' +
+        '<div class="cv-title">' + esc(conv.label || 'Untitled') + ' ' + headerTags + '</div>' +
+        '<div class="cv-actions">' +
+          '<button class="cv-btn flag-btn" onclick="toggleFlag()">' + (conv.flagged ? 'Unflag' : 'Flag') + '</button>' +
+          '<button class="cv-btn" onclick="copyConvText()">Copy</button>' +
+        '</div>' +
       '</div>' +
-    '</div>' +
-    '<div class="cv-msgs">' + (msgsHtml || '<div style="color:var(--text4);font-size:11px;padding:20px;font-family:Lora,serif;font-style:italic">Empty conversation.</div>') + '</div>' +
-    '<div class="cv-notes"><div class="cv-notes-title">Admin notes</div>' + notesHtml + '</div>' +
-    '<div class="cv-add-note">' +
-      '<input class="note-input" id="note-input" placeholder="Add a note…" maxlength="500">' +
-      '<select class="note-sev" id="note-sev">' +
-        '<option value="info">Info</option>' +
-        '<option value="flag">Flag</option>' +
-        '<option value="escalate">Escalate</option>' +
-      '</select>' +
-      '<button class="add-note-btn" onclick="addNote()">Add</button>' +
-    '</div>';
+      '<div class="cv-msgs">' + (msgsHtml || '<div style="color:var(--text4);font-size:11px;padding:20px;font-family:Lora,serif;font-style:italic">Empty conversation.</div>') + '</div>' +
+      '<div class="cv-notes"><div class="cv-notes-title">Admin notes</div>' + notesHtml + '</div>' +
+      '<div class="cv-add-note">' +
+        '<input class="note-input" id="note-input" placeholder="Add a note…" maxlength="500">' +
+        '<select class="note-sev" id="note-sev">' +
+          '<option value="info">Info</option>' +
+          '<option value="flag">Flag</option>' +
+          '<option value="escalate">Escalate</option>' +
+        '</select>' +
+        '<button class="add-note-btn" onclick="addNote()">Add</button>' +
+      '</div>';
+
+    // Re-attach support send panel if it was there
+    if(sendPanel) cv.appendChild(sendPanel);
+
   } catch(e) {
-    document.getElementById('conv-viewer').innerHTML =
-      '<div class="loading" style="color:var(--text4)">Render error: ' + esc(String(e)) + '</div>';
+    console.error('renderConvViewer error:', e);
+    cv.innerHTML = '<div class="loading" style="color:var(--text4)">Render error: ' + esc(String(e.message || e)) + '</div>';
+    if(sendPanel) cv.appendChild(sendPanel);
   }
 }
 
