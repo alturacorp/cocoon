@@ -793,6 +793,16 @@ function filterConvs(query){
 // ── Lume response toggle ──────────────────────────────────────
 var _lumeResponsesDisabled = false;
 
+
+function reopenSupportTools(){
+  if(!_agentConnected) return;
+  var agentName = (document.getElementById('agent-name-input') || {}).value || 'Support';
+  showSupportSendPanel(agentName);
+  // Reload canned responses
+  if(typeof loadCannedResponses === 'function') loadCannedResponses();
+  showToast('Support tools restored');
+}
+
 function toggleLumeResponses(){
   if(!currentAccount) return;
   _lumeResponsesDisabled = !_lumeResponsesDisabled;
@@ -1502,6 +1512,11 @@ function renderAccountPanel(a){
     var disconnectBtn = document.getElementById('support-disconnect-btn');
     if(connectBtn)    connectBtn.style.display    = 'none';
     if(disconnectBtn) disconnectBtn.style.display = '';
+    // Re-show send panel if it was wiped by the render
+    if(!document.getElementById('support-send-panel')){
+      var agentName = (document.getElementById('agent-name-input') || {}).value || 'Support';
+      showSupportSendPanel(agentName);
+    }
   }
 }
 
@@ -1633,9 +1648,11 @@ function renderConvViewer(conv){
       '<div class="cv-header">' +
         '<div class="cv-title">' + esc(conv.label || 'Untitled') + ' ' + headerTags + '</div>' +
         '<div class="cv-actions">' +
-          '<button class="cv-btn flag-btn" onclick="toggleFlag()">' + (conv.flagged ? 'Unflag' : 'Flag') + '</button>' +
-          '<button class="cv-btn" onclick="copyConvText()">Copy</button>' +
-        '</div>' +
+        (_agentConnected && !document.getElementById('support-send-panel')
+          ? '<button class="cv-btn" style="color:#4ade80;border-color:rgba(74,222,128,.2)" onclick="reopenSupportTools()">&#9654; Support tools</button>'
+          : '') +
+        '<button class="cv-btn flag-btn" onclick="toggleFlag()">' + (conv.flagged ? 'Unflag' : 'Flag') + '</button>' +
+        '<button class="cv-btn" onclick="copyConvText()">Copy</button>' +
       '</div>' +
       '<div class="cv-msgs">' + (msgsHtml || '<div style="color:var(--text4);font-size:11px;padding:20px;font-family:Lora,serif;font-style:italic">Empty conversation.</div>') + '</div>' +
       '<div class="cv-notes"><div class="cv-notes-title">Admin notes</div>' + notesHtml + '</div>' +
