@@ -1439,16 +1439,19 @@ function renderConvViewer(conv){
   var msgs = (conv.messages || []).filter(function(m){ return m.role !== 'system'; });
   var notes = conv.adminNotes || [];
 
-  var msgsHtml = msgs.map(function(m){
-    var isUser = m.role === 'user';
-    var content = esc(typeof m.content === 'string' ? m.content : JSON.stringify(m.content));
-    // Interpolate timestamp from savedAt across messages
-    var msgTs = conv.savedAt ? new Date(conv.savedAt).toLocaleString() : '';
+  var lastTs = conv.savedAt ? new Date(conv.savedAt).toLocaleString() : '';
+  var msgsHtml = msgs.map(function(m, i){
+    var isUser  = m.role === 'user';
+    var raw     = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+    // Strip markdown bold/italic before escaping so **name** doesn't render as raw asterisks
+    var cleaned = raw.replace(/\*\*(.+?)\*\*/g, '$1').replace(/\*(.+?)\*/g, '$1');
+    var content = esc(cleaned);
+    var showTs  = (i === msgs.length - 1) && lastTs;
     return '<div class="msg-row' + (isUser ? ' user-row' : '') + '">' +
       '<div class="msg-role">' + (isUser ? 'user' : 'lume') + '</div>' +
       '<div style="flex:1">' +
         '<div class="msg-bubble">' + content + '</div>' +
-        (msgTs && i === msgs.length - 1 ? '<div style="font-family:Geist Mono,monospace;font-size:8.5px;color:var(--text4);margin-top:4px;' + (isUser ? 'text-align:right' : '') + '">' + msgTs + '</div>' : '') +
+        (showTs ? '<div style="font-family:Geist Mono,monospace;font-size:8.5px;color:var(--text4);margin-top:4px;' + (isUser ? 'text-align:right' : '') + '">' + lastTs + '</div>' : '') +
       '</div>' +
     '</div>';
   }).join('');
@@ -1466,6 +1469,7 @@ function renderConvViewer(conv){
   if(conv.flagged) headerTags += '<span class="tag amber" style="font-size:8px;padding:1px 6px">Flagged</span> ';
   if(conv.aupFlags && conv.aupFlags.length) headerTags += '<span class="tag red" style="font-size:8px;padding:1px 6px">' + conv.aupFlags.length + ' AUP event' + (conv.aupFlags.length !== 1 ? 's' : '') + '</span>';
 
+  try {
   document.getElementById('conv-viewer').innerHTML =
     '<div class="cv-header">' +
       '<div class="cv-title">' + esc(conv.label || 'Untitled') + ' ' + headerTags + '</div>' +
@@ -1485,6 +1489,10 @@ function renderConvViewer(conv){
       '</select>' +
       '<button class="add-note-btn" onclick="addNote()">Add</button>' +
     '</div>';
+  } catch(e) {
+    document.getElementById('conv-viewer').innerHTML =
+      '<div class="loading" style="color:var(--text4)">Render error: ' + esc(String(e)) + '</div>';
+  }
 }
 
 function addNote(){
