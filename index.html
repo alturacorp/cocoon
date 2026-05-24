@@ -1399,23 +1399,29 @@ function selectConv(id, _retry){
 
   document.getElementById('conv-viewer').innerHTML = '<div class="loading">Loading…</div>';
 
-  fetch(WORKER + '/admin/conv?account=' + encodeURIComponent(currentAccount) + '&id=' + encodeURIComponent(id), {
+  var url = WORKER + '/admin/conv?account=' + encodeURIComponent(currentAccount) + '&id=' + encodeURIComponent(id);
+  console.log('[admin] selectConv fetch:', url, 'account:', currentAccount, 'id:', id);
+
+  fetch(url, {
     headers: { 'X-Admin-Key': ADMIN_KEY }
   }).then(function(r){
+    console.log('[admin] conv response status:', r.status);
     if(!r.ok){
-      // KV eventual consistency — retry once after 1.5s on 404
       if(r.status === 404 && !_retry){
         setTimeout(function(){ selectConv(id, true); }, 1500);
         return null;
       }
-      throw new Error('HTTP ' + r.status);
+      return r.json().then(function(body){
+        throw new Error('HTTP ' + r.status + ': ' + (body.error || JSON.stringify(body)));
+      });
     }
     return r.json();
   }).then(function(conv){
-    if(!conv) return; // retry pending
+    if(!conv) return;
+    console.log('[admin] conv received, messages:', conv.messages && conv.messages.length);
     if(conv.error){
       document.getElementById('conv-viewer').innerHTML =
-        '<div class="loading" style="color:var(--text4)">Could not load conversation: ' + esc(conv.error) + '</div>';
+        '<div class="loading" style="color:var(--text4)">Could not load: ' + esc(String(conv.error)) + '</div>';
       return;
     }
     renderConvViewer(conv);
@@ -1425,8 +1431,9 @@ function selectConv(id, _retry){
       body: JSON.stringify({ account: currentAccount, active: true, convId: id })
     });
   }).catch(function(e){
+    console.error('[admin] selectConv error:', e);
     document.getElementById('conv-viewer').innerHTML =
-      '<div class="loading" style="color:var(--text4)">Failed to load. <span style="cursor:pointer;text-decoration:underline" onclick="selectConv(&quot;' + esc(id) + '&quot;)">Retry</span></div>';
+      '<div class="loading" style="color:var(--text4)">Failed to load: ' + esc(String(e.message || e)) + '. <span style="cursor:pointer;text-decoration:underline" onclick="selectConv(&quot;' + esc(id) + '&quot;)">Retry</span></div>';
   });
 }
 
