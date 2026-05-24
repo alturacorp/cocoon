@@ -753,6 +753,47 @@ function filterConvs(query){
   });
 }
 
+
+// ── Lume response toggle ──────────────────────────────────────
+var _lumeResponsesDisabled = false;
+
+function toggleLumeResponses(){
+  if(!currentAccount) return;
+  _lumeResponsesDisabled = !_lumeResponsesDisabled;
+  fetch(WORKER + '/admin/support/lume', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Key': ADMIN_KEY },
+    body:    JSON.stringify({ account: currentAccount, disabled: _lumeResponsesDisabled }),
+  }).then(function(r){ return r.json(); }).then(function(d){
+    updateLumeToggleBtn(d.lumeDisabled);
+    showToast('Lume responses ' + (d.lumeDisabled ? 'disabled' : 'enabled'));
+  });
+}
+
+function updateLumeToggleBtn(disabled){
+  var btn = document.getElementById('lume-toggle-btn');
+  if(!btn) return;
+  _lumeResponsesDisabled = !!disabled;
+  if(disabled){
+    btn.textContent      = 'Enable Lume';
+    btn.style.borderColor = 'rgba(74,222,128,.25)';
+    btn.style.background  = 'rgba(74,222,128,.08)';
+    btn.style.color       = '#4ade80';
+  } else {
+    btn.textContent       = 'Disable Lume';
+    btn.style.borderColor = 'rgba(251,191,36,.2)';
+    btn.style.background  = 'rgba(251,191,36,.06)';
+    btn.style.color       = '#fbbf24';
+  }
+}
+
+// Reset when disconnecting
+var _origSupportDisc2 = supportDisconnect;
+supportDisconnect = function(){
+  _lumeResponsesDisabled = false;
+  _origSupportDisc2();
+};
+
 // ── Quick account actions in support panel ────────────────────
 
 function deleteAccount(){
@@ -1134,9 +1175,12 @@ function showSupportSendPanel(agentName){
   panel.id = 'support-send-panel';
   panel.style.cssText = 'border-top:1px solid rgba(255,255,255,.05);padding:14px 24px 18px;flex-shrink:0;display:flex;flex-direction:column;gap:8px;background:rgba(74,222,128,.03)';
   panel.innerHTML =
-    '<div style="font-family:Geist,sans-serif;font-size:8.5px;letter-spacing:.14em;text-transform:uppercase;color:#4ade80;display:flex;align-items:center;gap:7px">' +
-      '<span style="width:5px;height:5px;border-radius:50%;background:#4ade80;animation:pulse 2s ease-in-out infinite;flex-shrink:0"></span>' +
-      'Active support session · ' + esc(agentName) +
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">' +
+      '<div style="font-family:Geist,sans-serif;font-size:8.5px;letter-spacing:.14em;text-transform:uppercase;color:#4ade80;display:flex;align-items:center;gap:7px">' +
+        '<span style="width:5px;height:5px;border-radius:50%;background:#4ade80;animation:pulse 2s ease-in-out infinite;flex-shrink:0"></span>' +
+        'Active support session · ' + esc(agentName) +
+      '</div>' +
+      '<button id="lume-toggle-btn" onclick="toggleLumeResponses()" style="font-family:Geist,sans-serif;font-size:8px;letter-spacing:.1em;text-transform:uppercase;padding:3px 8px;border-radius:2px;border:1px solid rgba(251,191,36,.2);background:rgba(251,191,36,.06);color:#fbbf24;cursor:pointer;transition:all .2s">Disable Lume</button>' +
     '</div>' +
     // Live typing preview
     '<div id="typing-preview" style="display:none;margin:6px 0;padding:8px 10px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:3px">' +
