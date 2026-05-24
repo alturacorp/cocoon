@@ -1406,11 +1406,20 @@ function renderAccountPanel(a){
   if(a.locked) tags.push('<span class="tag red">Locked</span>');
   if(a.convCount > 0) tags.push('<span class="tag dim">' + a.convCount + ' conversations</span>');
 
+  // Device info
+  var di = a.deviceInfo || {};
+  var locationStr = [di.city, di.country].filter(Boolean).join(', ');
+  var uaStr = di.userAgent ? parseUA(di.userAgent) : '';
+
   document.getElementById('account-panel').innerHTML =
     '<div class="ap-header">' +
-      '<div class="ap-name">' + esc(a.account) + '</div>' +
-      '<div class="ap-meta">Last seen ' + relTime(a.lastSeen) + (a.consentTs ? ' · Consent ' + relTime(a.consentTs) : '') + '</div>' +
-      '<div class="ap-tags">' + tags.join('') + '</div>' +
+      '<div class="ap-name">' + esc(a.displayName || a.account) + '</div>' +
+      '<div style="font-family:Geist,sans-serif;font-size:9px;color:var(--text4);letter-spacing:.04em;margin-top:1px">' + esc(a.account) + '</div>' +
+      '<div class="ap-meta" style="margin-top:6px">Last seen ' + relTime(a.lastSeen) + (a.consentTs ? ' · Consent ' + relTime(a.consentTs) : '') + '</div>' +
+      (di.ip ? '<div class="ap-meta" style="margin-top:3px;font-family:Geist Mono,monospace;font-size:9px">' +
+        esc(di.ip) + (locationStr ? ' · ' + esc(locationStr) : '') + '</div>' : '') +
+      (uaStr ? '<div class="ap-meta" style="margin-top:2px">' + esc(uaStr) + '</div>' : '') +
+      '<div class="ap-tags" style="margin-top:8px">' + tags.join('') + '</div>' +
     '</div>' +
     '<div class="ap-actions">' +
       '<div class="action-row">' +
@@ -1771,7 +1780,6 @@ function refreshAll(){
 }
 
 function updateAccountHeader(a){
-  // Refresh just the header part of the account panel without touching actions/convs
   var header = document.querySelector('#account-panel .ap-header');
   if(!header) return;
   var tags = [];
@@ -1779,10 +1787,16 @@ function updateAccountHeader(a){
   else tags.push('<span class="tag amber">No consent recorded</span>');
   if(a.locked) tags.push('<span class="tag red">Locked</span>');
   if(a.convCount > 0) tags.push('<span class="tag dim">' + a.convCount + ' conversations</span>');
+  var di = a.deviceInfo || {};
+  var locationStr = [di.city, di.country].filter(Boolean).join(', ');
+  var uaStr = di.userAgent ? parseUA(di.userAgent) : '';
   header.innerHTML =
-    '<div class="ap-name">' + esc(a.account) + '</div>' +
-    '<div class="ap-meta">Last seen ' + relTime(a.lastSeen) + (a.consentTs ? ' · Consent ' + relTime(a.consentTs) : '') + '</div>' +
-    '<div class="ap-tags">' + tags.join('') + '</div>';
+    '<div class="ap-name">' + esc(a.displayName || a.account) + '</div>' +
+    '<div style="font-family:Geist,sans-serif;font-size:9px;color:var(--text4);letter-spacing:.04em;margin-top:1px">' + esc(a.account) + '</div>' +
+    '<div class="ap-meta" style="margin-top:6px">Last seen ' + relTime(a.lastSeen) + '</div>' +
+    (di.ip ? '<div class="ap-meta" style="margin-top:3px;font-family:Geist Mono,monospace;font-size:9px">' + esc(di.ip) + (locationStr ? ' · ' + esc(locationStr) : '') + '</div>' : '') +
+    (uaStr ? '<div class="ap-meta" style="margin-top:2px">' + esc(uaStr) + '</div>' : '') +
+    '<div class="ap-tags" style="margin-top:8px">' + tags.join('') + '</div>';
 }
 
 function refreshConvList(){
@@ -1797,6 +1811,23 @@ function refreshConvList(){
 }
 
 // ── Utils ─────────────────────────────────────────────────────
+
+function parseUA(ua){
+  // Extract browser and OS from user agent string
+  var browser = 'Unknown browser';
+  var os      = '';
+  if(/Chrome\/(\d+)/.test(ua) && !/Edg/.test(ua)) browser = 'Chrome ' + ua.match(/Chrome\/(\d+)/)[1];
+  else if(/Firefox\/(\d+)/.test(ua))               browser = 'Firefox ' + ua.match(/Firefox\/(\d+)/)[1];
+  else if(/Edg\/(\d+)/.test(ua))                   browser = 'Edge ' + ua.match(/Edg\/(\d+)/)[1];
+  else if(/Safari\//.test(ua) && !/Chrome/.test(ua)) browser = 'Safari';
+  if(/Windows NT/.test(ua))     os = 'Windows';
+  else if(/Mac OS X/.test(ua))  os = 'macOS';
+  else if(/Linux/.test(ua))     os = 'Linux';
+  else if(/Android/.test(ua))   os = 'Android';
+  else if(/iPhone|iPad/.test(ua)) os = 'iOS';
+  return browser + (os ? ' · ' + os : '');
+}
+
 function esc(s){
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
